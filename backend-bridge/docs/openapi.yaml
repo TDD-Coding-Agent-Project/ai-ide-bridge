@@ -1,0 +1,350 @@
+openapi: 3.1.0
+info:
+  title: AI IDE Bridge API
+  version: v1alpha1
+  description: |
+    Protocol between Void-based desktop frontend and OpenHands-based backend bridge.
+
+servers:
+  - url: http://127.0.0.1:27182
+
+tags:
+  - name: Tasks
+  - name: Commands
+
+paths:
+  /v1/tasks:
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '200':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTaskResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{taskId}:
+    get:
+      tags: [Tasks]
+      summary: Get task by id
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetTaskResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{taskId}/cancel:
+    post:
+      tags: [Tasks]
+      summary: Cancel a running task
+      operationId: cancelTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BasicSuccessResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{taskId}/commands/{commandId}/approval:
+    post:
+      tags: [Commands]
+      summary: Approve or reject a command requested by the agent
+      operationId: approveCommand
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/CommandId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandApprovalRequest'
+      responses:
+        '200':
+          description: Approval recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BasicSuccessResponse'
+        '404':
+          description: Task or command not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+    CommandId:
+      name: commandId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    CreateTaskRequest:
+      type: object
+      required:
+        - mode
+        - userPrompt
+        - repo
+        - policy
+      properties:
+        requestId:
+          type: string
+        sessionId:
+          type: string
+        protocolVersion:
+          type: string
+          default: v1alpha1
+        mode:
+          type: string
+          enum:
+            - repo_chat
+            - edit_selection
+            - fix_test
+            - refactor_scope
+            - explain_error
+        userPrompt:
+          type: string
+        repo:
+          type: object
+          required: [rootPath]
+          properties:
+            rootPath:
+              type: string
+            branch:
+              type: string
+        context:
+          type: object
+          properties:
+            activeFile:
+              type: string
+            selection:
+              $ref: '#/components/schemas/Selection'
+            openFiles:
+              type: array
+              items:
+                type: string
+            diagnostics:
+              type: array
+              items:
+                type: object
+            gitDiff:
+              type: string
+            terminalTail:
+              type: string
+            testLogs:
+              type: string
+        policy:
+          $ref: '#/components/schemas/Policy'
+
+    Selection:
+      type: object
+      required: [startLine, startCol, endLine, endCol]
+      properties:
+        startLine:
+          type: integer
+        startCol:
+          type: integer
+        endLine:
+          type: integer
+        endCol:
+          type: integer
+
+    Policy:
+      type: object
+      required:
+        - workspaceMode
+        - network
+      properties:
+        workspaceMode:
+          type: string
+          enum: [local, docker, remote]
+        network:
+          type: string
+          enum: [allow, deny]
+        requireApprovalFor:
+          type: array
+          items:
+            type: string
+        maxDurationSec:
+          type: integer
+        maxOutputBytes:
+          type: integer
+
+    Task:
+      type: object
+      required:
+        - taskId
+        - mode
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        taskId:
+          type: string
+        mode:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - planning
+            - awaiting_approval
+            - running
+            - patch_ready
+            - completed
+            - failed
+            - cancelled
+        workspaceMode:
+          type: string
+          enum: [local, docker, remote]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateTaskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        requestId:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: '#/components/schemas/Task'
+        error:
+          nullable: true
+          $ref: '#/components/schemas/Error'
+        protocolVersion:
+          type: string
+
+    GetTaskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        requestId:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: '#/components/schemas/Task'
+        error:
+          nullable: true
+          $ref: '#/components/schemas/Error'
+        protocolVersion:
+          type: string
+
+    CommandApprovalRequest:
+      type: object
+      required: [approved]
+      properties:
+        approved:
+          type: boolean
+        reason:
+          type: string
+
+    BasicSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        requestId:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        error:
+          nullable: true
+          $ref: '#/components/schemas/Error'
+        protocolVersion:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        requestId:
+          type: string
+        data:
+          nullable: true
+          type: object
+        error:
+          $ref: '#/components/schemas/Error'
+        protocolVersion:
+          type: string
+
+    Error:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - AUTH_ERROR
+            - WORKSPACE_ERROR
+            - MODEL_ERROR
+            - TOOL_ERROR
+            - PATCH_ERROR
+            - TIMEOUT_ERROR
+            - INTERNAL_ERROR
+        message:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: true
